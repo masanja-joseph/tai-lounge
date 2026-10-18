@@ -1,0 +1,386 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id        String   @id @default(uuid())
+  name      String   @default("TAI LOUNGE")
+  currency  String   @default("TZS")
+  timezone  String   @default("Africa/Dar_es_Salaam")
+  logoUrl            String?
+  darkLogoUrl        String?
+  lightLogoUrl       String?
+  faviconUrl         String?
+  loginLogoUrl       String?
+  tagline            String?
+  logoSizeDesktop    Int      @default(150)
+  logoSizeMobile     Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches   Branch[]
+  users      User[]
+  categories ProductCategory[]
+  products   Product[]
+  sections   LoungeSection[]
+  tables     LoungeTable[]
+  orders     Order[]
+  tickets    PreparationTicket[]
+  auditLogs  AuditLog[]
+
+  @@map("businesses")
+}
+
+model Branch {
+  id         String   @id @default(uuid())
+  businessId String
+  name       String   @default("Main Lounge & Bar")
+  code       String   @default("MAIN")
+  address    String?
+  phone      String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  users     User[]
+  sections  LoungeSection[]
+  tables    LoungeTable[]
+  orders    Order[]
+  tickets   PreparationTicket[]
+  auditLogs AuditLog[]
+
+  @@index([businessId])
+  @@map("branches")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // OWNER, MANAGER, CASHIER, WAITER, BARTENDER, KITCHEN, STOREKEEPER
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  businessId String?
+  branchId   String?
+  roleId     String
+  username   String   @unique
+  email      String?  @unique
+  fullName   String
+  pinCode    String?  // Quick 4-digit PIN for touch login
+  phoneNumber String?  
+  isVerified  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business      Business?  @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  branch        Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  role          Role       @relation(fields: [roleId], references: [id])
+  cashierOrders Order[]    @relation("CashierOrders")
+  waiterOrders  Order[]    @relation("WaiterOrders")
+  auditLogs     AuditLog[]
+
+  @@index([businessId])
+  @@index([branchId])
+  @@index([roleId])
+  @@map("users")
+}
+
+model LoungeSection {
+  id           String   @id @default(uuid())
+  businessId   String
+  branchId     String
+  name         String   // e.g. "Main Lounge", "VIP Section", "Terrace Bar", "Garden Area"
+  code         String   // e.g. "MAIN", "VIP", "TERRACE"
+  isVip        Boolean  @default(false)
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tables   LoungeTable[]
+
+  @@unique([branchId, code])
+  @@index([businessId])
+  @@index([branchId])
+  @@map("lounge_sections")
+}
+
+model LoungeTable {
+  id           String   @id @default(uuid())
+  businessId   String
+  branchId     String
+  sectionId    String
+  tableNumber  String   // e.g. "Table 31", "VIP 1", "Counter 04"
+  capacity     Int      @default(4)
+  status       String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  section  LoungeSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  tableQr  TableQr?
+
+  @@unique([branchId, tableNumber])
+  @@index([businessId])
+  @@index([branchId])
+  @@index([sectionId])
+  @@index([status])
+  @@map("lounge_tables")
+}
+
+model ProductCategory {
+  id           String   @id @default(uuid())
+  businessId   String
+  name         String   // Beer, Spirits, Wine, Cocktails, Soft Drinks, Water, Food, Snacks
+  slug         String
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@map("product_categories")
+}
+
+model Product {
+  id                 String   @id @default(uuid())
+  businessId         String
+  categoryId         String
+  sku                String   @unique
+  barcode            String?
+  name               String
+  description        String?
+  price              Int      // Price in TZS (integer amount)
+  costPrice          Int?     // Purchase cost in TZS
+  stockQuantity      Int      @default(0)
+  minStockThreshold  Int      @default(5)
+  unitOfMeasure      String   @default("Bottle") // Bottle, Can, Shot, Portion, Glass
+  imageUrl           String?
+  station            String   @default("BAR") // BAR or KITCHEN
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Order {
+  id             String    @id @default(uuid())
+  businessId     String
+  branchId       String
+  orderNumber    String    @unique // e.g. ORD-1024
+  idempotencyKey String?   @unique
+  serviceType    String    @default("DINE_IN") // DINE_IN, WALK_IN, VIP, TAKEAWAY
+  tableId        String?
+  tableNumber    String?   // Snapshot at time of order
+  customerName   String?
+  guestCount     Int       @default(1)
+  status         String    @default("OPEN") // DRAFT, OPEN, SENT_TO_PREPARATION, AWAITING_PAYMENT, PARTIALLY_PAID, PAID, CLOSED, CANCELLED, VOIDED
+  subtotal       Int       @default(0) // in TZS
+  tax            Int       @default(0) // in TZS (18% VAT)
+  discount       Int       @default(0) // in TZS
+  total          Int       @default(0) // in TZS (subtotal + tax - discount)
+  amountPaid     Int       @default(0) // in TZS
+  balanceDue     Int       @default(0) // in TZS (total - amountPaid)
+  notes          String?
+  waiterId       String?
+  cashierId      String?
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  business Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table    LoungeTable?        @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  waiter   User?               @relation("WaiterOrders", fields: [waiterId], references: [id], onDelete: SetNull)
+  cashier  User?               @relation("CashierOrders", fields: [cashierId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+  tickets  PreparationTicket[]
+  payments Payment[]
+
+  @@index([businessId, branchId])
+  @@index([tableId])
+  @@index([status])
+  @@index([serviceType])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                     String   @id @default(uuid())
+  orderId                String
+  productId              String
+  productName            String
+  sku                    String
+  unitPrice              Int      // in TZS at time of order
+  quantity               Int      @default(1)
+  discount               Int      @default(0) // in TZS
+  subtotal               Int      // (unitPrice * quantity) - discount
+  station                String   @default("BAR") // BAR or KITCHEN
+  specialInstructions    String?  // e.g. "Extra Ice", "No Sugar", "Well Done"
+  status                 String   @default("NEW") // NEW, SUBMITTED, PREPARING, READY, SERVED, CANCELLED
+  isPreparationSubmitted Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  order       Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product                 @relation(fields: [productId], references: [id])
+  ticketItems PreparationTicketItem[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([station])
+  @@index([status])
+  @@map("order_items")
+}
+
+model PreparationTicket {
+  id           String    @id @default(uuid())
+  businessId   String
+  branchId     String
+  orderId      String
+  ticketNumber String    // e.g. "TKT-BAR-1024-1"
+  station      String    // BAR or KITCHEN
+  status       String    @default("NEW") // NEW, ACCEPTED, PREPARING, READY, SERVED, CANCELLED
+  notes        String?
+  submittedBy  String?   // Staff username / ID
+  acceptedAt   DateTime?
+  readyAt      DateTime?
+  servedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  business Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch                  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  order    Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items    PreparationTicketItem[]
+
+  @@index([businessId, branchId])
+  @@index([orderId])
+  @@index([station])
+  @@index([status])
+  @@map("preparation_tickets")
+}
+
+model PreparationTicketItem {
+  id                  String   @id @default(uuid())
+  ticketId            String
+  orderItemId         String
+  productName         String
+  quantity            Int
+  station             String
+  specialInstructions String?
+  status              String   @default("NEW") // NEW, PREPARING, READY, SERVED, CANCELLED
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  ticket    PreparationTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  orderItem OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([orderItemId])
+  @@map("preparation_ticket_items")
+}
+
+model Payment {
+  id             String   @id @default(uuid())
+  orderId        String
+  branchId       String
+  amount         Int      // in TZS
+  method         String   // CASH, MOBILE_MONEY, CARD, SPLIT
+  provider       String?  // MPESA, TIGO_PESA, AIRTEL_MONEY, HALOPESA, VISA, MASTERCARD
+  reference      String?  // Transaction reference / receipt code
+  idempotencyKey String?  @unique
+  status         String   @default("COMPLETED") // PENDING, COMPLETED, FAILED, REVERSED
+  receivedBy     String?  // User ID who processed it
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([branchId])
+  @@map("payments")
+}
+
+
+model OtpChallenge {
+  id         String   @id @default(uuid())
+  phoneNumber String
+  codeHash   String
+  purpose    String   // STAFF_LOGIN, CUSTOMER_VERIFY
+  expiresAt  DateTime
+  usedAt     DateTime?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([phoneNumber])
+  @@index([expiresAt])
+  @@map("otp_challenges")
+}
+
+model TableQr {
+  id        String   @id @default(uuid())
+  tableId   String   @unique
+  token     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  table     LoungeTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("table_qrs")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  businessId String?
+  branchId   String?
+  userId     String?
+  action     String   // ORDER_CREATE, ORDER_UPDATE, TABLE_TRANSFER, TICKET_STATUS, etc.
+  entityType String   // PRODUCT, ORDER, TABLE, TICKET, PAYMENT, USER, OTP
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([branchId])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
